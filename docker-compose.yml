@@ -1,0 +1,9 @@
+services:
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yourdockerhubusername/stack-overflow-clone-client:latest
+    ports:
+      - "80:80"
+    restart: unless-stopped

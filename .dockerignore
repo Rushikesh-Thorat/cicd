@@ -1,12 +1,10 @@
 node_modules
 build
 dist
-.dockerignore
+.DS_Store
 .git
 .gitignore
 .vscode
-.env.local
-.env.development
+.env*
 npm-debug.log
 yarn-error.log
-.DS_Store
