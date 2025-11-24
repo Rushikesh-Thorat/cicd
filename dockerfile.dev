@@ -1,0 +1,15 @@
+FROM node:18-alpine
+WORKDIR /app
+
+# install deps
+COPY package*.json ./
+RUN npm ci
+
+# copy rest (we'll override with a bind mount locally)
+COPY . .
+
+EXPOSE 3000
+
+# For CRA: start script usually runs react-scripts start which uses PORT env var
+ENV CHOKIDAR_USEPOLLING=true
+CMD ["npm", "start"]

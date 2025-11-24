@@ -1,0 +1,12 @@
+node_modules
+build
+dist
+.dockerignore
+.git
+.gitignore
+.vscode
+.env.local
+.env.development
+npm-debug.log
+yarn-error.log
+.DS_Store
