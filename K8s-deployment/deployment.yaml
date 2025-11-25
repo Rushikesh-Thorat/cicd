@@ -1,18 +1,8 @@
-# Kubernetes manifests for deploying the frontend app (put in k8s-deployment/)
-# CI will replace the image with: <REGISTRY>/<REPO>:<TAG>
-# e.g. docker.io/youruser/stack-overflow-client:${IMAGE_TAG}
-
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: stack-overflow
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: stack-overflow-deployment
-  namespace: stack-overflow
+  namespace: 2401200
   labels:
     app: stack-overflow-client
     component: frontend
@@ -31,19 +21,15 @@ spec:
       labels:
         app: stack-overflow-client
         component: frontend
-      annotations:
-        # Useful for NGINX ingress: ensure trailing slash rewrite for SPA routing
-        nginx.ingress.kubernetes.io/rewrite-target: /$1
     spec:
-      # If your registry requires credentials, uncomment and create a secret in this namespace
-      # imagePullSecrets:
-      #   - name: regcred
+      # Required to pull from your Nexus registry
+      imagePullSecrets:
+        - name: nexus-secret
       containers:
         - name: stack-overflow-client
-          # CI will update this image using: kubectl set image deployment/stack-overflow-deployment \
-          # stack-overflow-client=<REGISTRY>/<REPO>:<TAG>
-          image: <REGISTRY>/<REPO>:<TAG>
-          imagePullPolicy: IfNotPresent
+          # The pipeline will replace 'client:latest' with the full Nexus URL and tag
+          image: client:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
               name: http
@@ -70,13 +56,12 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: stack-overflow-service
-  namespace: stack-overflow
+  namespace: 2401200
   labels:
     app: stack-overflow-client
 spec:
@@ -87,53 +72,3 @@ spec:
     - name: http
       port: 80
       targetPort: 80
-
----
-# Optional Ingress (requires an Ingress controller like NGINX ingress)
-# Replace host with your domain (or remove host to accept all hosts)
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: stack-overflow-ingress
-  namespace: stack-overflow
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$1
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      # ensure paths are forwarded to index.html for SPA routing if needed
-      # (the rewrite-target above + try_files in your ingress controller config is usually enough)
-spec:
-  rules:
-    - host: example.com
-      http:
-        paths:
-          - path: /(.*)
-            pathType: Prefix
-            backend:
-              service:
-                name: stack-overflow-service
-                port:
-                  number: 80
-
----
-# Optional: if you want to expose directly via LoadBalancer instead of using Ingress
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: stack-overflow-service-lb
-#   namespace: stack-overflow
-# spec:
-#   type: LoadBalancer
-#   selector:
-#     app: stack-overflow-client
-#   ports:
-#     - port: 80
-#       targetPort: 80
-#
-# Image pull secret creation (for private registries):
-# kubectl create secret docker-registry regcred \
-#   --docker-server=<REGISTRY> \
-#   --docker-username=<USERNAME> \
-#   --docker-password=<PASSWORD> \
-#   --docker-email=<EMAIL> -n stack-overflow
-#
-# Then uncomment imagePullSecrets above in the Deployment.
