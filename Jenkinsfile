@@ -60,13 +60,8 @@ spec:
     }
 
     environment {
-        // -------------------------------------------------------------------------
-        // CRITICAL FIX: Set this to JUST the domain name.
-        // Docker cannot handle 'http://' or '/repository/' in the registry variable.
-        // The path 'my-repository' is handled by REPO_NAME below.
-        // -------------------------------------------------------------------------
-        NEXUS_REGISTRY = 'nexus.imcc.com'
-        
+        // Define your registry URL here to avoid typos
+        NEXUS_REGISTRY = 'nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085'
         REPO_NAME = 'my-repository'
         IMAGE_NAME = 'client'
     }
@@ -89,6 +84,7 @@ spec:
                             sleep 2
                         done
                         
+                        # FIX 1: Build the image with the name 'client' to match later stages
                         docker build -t client:latest .
                         docker image ls
                     '''
@@ -117,7 +113,7 @@ spec:
                     sh """
                         docker --version
                         sleep 5
-                        # Log in to the Nexus domain
+                        # Log in using the variable defined at the top
                         docker login ${NEXUS_REGISTRY} -u admin -p Changeme@2025
                     """
                 }
@@ -128,7 +124,7 @@ spec:
             steps {
                 container('dind') {
                     sh """
-                        # Tag logic: nexus.imcc.com/my-repository/client:10
+                        # FIX 2: Tag the image with the BUILD_NUMBER so K8s can pull this specific version
                         docker tag client:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}
                         docker tag client:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:latest
 
@@ -147,7 +143,7 @@ spec:
                         # 1. Create namespace if it doesn't exist
                         kubectl get namespace 2401200 || kubectl create namespace 2401200
 
-                        # 2. Create Docker Registry Secret using the PUBLIC URL
+                        # 2. Create Docker Registry Secret
                         kubectl create secret docker-registry nexus-secret \
                           --docker-server=${NEXUS_REGISTRY} \
                           --docker-username=admin \
@@ -162,13 +158,10 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    // Ensure the folder matches exactly (Capital 'K')
                     dir('K8s-deployment') { 
                         sh """
-                            echo "DEBUG: Verifying deployment.yaml..."
-                            ls -la deployment.yaml
-
-                            # Update deployment.yaml to use the full public Nexus URL
+                            # Update deployment.yaml to use the image with the current BUILD_NUMBER
+                            # Ensure your deployment.yaml has 'image: .../client:latest' for this sed to work
                             sed -i "s|client:latest|${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
                             
                             kubectl apply -f deployment.yaml
