@@ -5,49 +5,49 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
-    securityContext:
-        fsGroup: 1000
-    containers:
+  securityContext:
+    fsGroup: 1000
+  containers:
     - name: dind
-        image: docker:24-dind
-        securityContext:
-            privileged: true
-        env:
-            - name: DOCKER_TLS_CERTDIR
-              value: ""
-        volumeMounts:
-            - name: docker-graph-storage
-              mountPath: /var/lib/docker
+      image: docker:24-dind
+      securityContext:
+        privileged: true
+      env:
+        - name: DOCKER_TLS_CERTDIR
+          value: ""
+      volumeMounts:
+        - name: docker-graph-storage
+          mountPath: /var/lib/docker
 
     - name: sonar-scanner
-        image: sonarsource/sonar-scanner-cli:latest
-        command: ["cat"]
-        tty: true
+      image: sonarsource/sonar-scanner-cli:latest
+      command: ["cat"]
+      tty: true
 
-    // --- NEW: Dedicated Node.js container for frontend build/test
+    # --- NEW: Dedicated Node.js container for frontend build/test
     - name: node
-        image: node:18-alpine // Using a lightweight, recent Node image
-        command: ["cat"]
-        tty: true
+      image: node:18-alpine # Using a lightweight, recent Node image
+      command: ["cat"]
+      tty: true
 
     - name: kubectl
-        image: bitnami/kubectl:latest
-        command: ["cat"]
-        tty: true
-        env:
-            - name: KUBECONFIG
-              value: /kube/config
-        volumeMounts:
-            - name: kubeconfig-secret
-              mountPath: /kube/config
-              subPath: kubeconfig
-
-    volumes:
-        - name: docker-graph-storage
-          emptyDir: {}
+      image: bitnami/kubectl:latest
+      command: ["cat"]
+      tty: true
+      env:
+        - name: KUBECONFIG
+          value: /kube/config
+      volumeMounts:
         - name: kubeconfig-secret
-          secret:
-            secretName: kubeconfig-secret
+          mountPath: /kube/config
+          subPath: kubeconfig
+
+  volumes:
+    - name: docker-graph-storage
+      emptyDir: {}
+    - name: kubeconfig-secret
+      secret:
+        secretName: kubeconfig-secret
 """
         }
     }
@@ -159,18 +159,19 @@ spec:
                             curl -sS --max-time 5 [http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/) || true
 
                             # SonarQube Scanner for a React/JS project
-                            sonar-scanner \\
-                              -Dsonar.projectKey=stack-overflow-client \\
-                              -Dsonar.host.url=[http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000) \\
-                              -Dsonar.login=${SONAR_TOKEN} \\
-                              \\
+                            sonar-scanner \
+                              -Dsonar.projectKey=stack-overflow-client \
+                              -Dsonar.host.url=[http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000) \
+                              -Dsonar.login=${SONAR_TOKEN} \
+                              \
                               # --- JAVASCRIPT/TYPESCRIPT PROPERTIES FOR COVERAGE ---
-                              -Dsonar.sources=./src \\
-                              -Dsonar.tests=./src \\
+                              -Dsonar.sources=./src \
+                              -Dsonar.tests=./src \
                               # Coverage report path (LCOV format is standard for JS)
-                              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \\
+                              -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
                               # Test execution report path (JUnit XML format)
-                              -Dsonar.testExecutionReportPaths=test-results.xml
+                              -Dsonar.testExecutionReportPaths=test-results.xml \
+                              -Dsonar.scm.disabled=true
                               # --- END JAVASCRIPT/TYPESCRIPT PROPERTIES ---
                         '''
                     }
