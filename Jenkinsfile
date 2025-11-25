@@ -85,7 +85,7 @@ spec:
                     npm ci
 
                     echo "Running Jest tests and generating LCOV/JUnit reports..."
-                    # Ensure Jest is configured to output LCOV (coverage/lcov.info) and JUnit XML (test-results.xml)
+                    # Ensure Jest is configured to output LCOV (coverage/lcov.info) and JUnit XML (test-results.xml) reports
                     npm test -- --coverage --testResultsProcessor=jest-junit --ci
 
                     echo "Reports generated: coverage/lcov.info and test-results.xml."
