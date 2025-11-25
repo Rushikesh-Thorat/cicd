@@ -158,7 +158,7 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    dir('k8s-deployment') { 
+                    dir('K8s-deployment') { 
                         sh """
                             # Update deployment.yaml to use the image with the current BUILD_NUMBER
                             # Ensure your deployment.yaml has 'image: .../client:latest' for this sed to work
