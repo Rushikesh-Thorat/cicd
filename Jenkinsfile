@@ -162,7 +162,7 @@ spec:
                         sh """
                             # Update deployment.yaml to use the image with the current BUILD_NUMBER
                             # Ensure your deployment.yaml has 'image: .../client:latest' for this sed to work
-                            sed -i 's|client:latest|client:${BUILD_NUMBER}|g' deployment.yaml
+                            sed -i "s|client:latest|${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
                             
                             kubectl apply -f deployment.yaml
                             
