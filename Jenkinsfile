@@ -94,11 +94,11 @@ spec:
         }
       }
     }
-stage('Build - Tag - Push Images') {
+stage('Build - Tag - Push Images ') {
   steps {
     container('dind') {
       script {
-        // Build client image from repo root (you have only frontend)
+        // Build client image from repo root (ensure Dockerfile is named 'Dockerfile' at repo root)
         sh "docker build -t ${CLIENT_REPO}:${IMAGE_TAG} -f Dockerfile . || true"
         sh "docker tag ${CLIENT_REPO}:${IMAGE_TAG} ${CLIENT_REPO}:latest || true"
 
@@ -114,7 +114,7 @@ stage('Build - Tag - Push Images') {
             '''
           }
         } catch (err) {
-          echo "Docker push skipped: credentials not found or login failed. Image built locally in DIND pod."
+          echo "Docker push skipped: credentials missing or login failed. Image kept in DIND pod only."
         }
 
         sh 'docker image ls | grep ${IMAGE_TAG} || true'
@@ -123,15 +123,26 @@ stage('Build - Tag - Push Images') {
   }
 }
 
-    stage('SonarQube Analysis') {
-      steps {
-        container('sonar-scanner') {
-          withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
-            sh "sonar-scanner -Dsonar.login=${SONAR_TOKEN} -Dsonar.projectKey=..."
-          }
-        }
+
+   stage('SonarQube Analysis') {
+  steps {
+    container('sonar-scanner') {
+      withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
+        sh '''
+          echo "Testing Sonar reachability..."
+          curl -sS --max-time 5 http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/ || true
+
+          sonar-scanner \
+            -Dsonar.projectKey=stack-overflow-client \
+            -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+            -Dsonar.login=${SONAR_TOKEN} \
+            -Dsonar.sources=./src || true
+        '''
       }
     }
+  }
+}
+
 
     stage('Deploy to Kubernetes') {
       steps {
