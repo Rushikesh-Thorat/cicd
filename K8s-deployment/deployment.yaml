@@ -1,74 +1,57 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: stack-overflow-deployment
-  namespace: 2401200
-  labels:
-    app: stack-overflow-client
-    component: frontend
+  name: client
+  namespace: "2401200"
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: stack-overflow-client
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      app: client
   template:
     metadata:
       labels:
-        app: stack-overflow-client
-        component: frontend
+        app: client
     spec:
-      # Required to pull from your Nexus registry
       imagePullSecrets:
-        - name: nexus-secret
+      - name: nexus-secret
       containers:
-        - name: stack-overflow-client
-          # The pipeline will replace 'client:latest' with the full Nexus URL and tag
-          image: client:latest
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 80
-              name: http
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 3
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+      - name: client
+        # We keep this as 'client:latest' so your Jenkinsfile can replace it
+        # with the full Nexus URL using the 'sed' command.
+        image: client:latest
+        ports:
+        - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: stack-overflow-service
-  namespace: 2401200
-  labels:
-    app: stack-overflow-client
+  name: client-service
+  namespace: "2401200"
 spec:
-  type: ClusterIP
   selector:
-    app: stack-overflow-client
+    app: client
   ports:
-    - name: http
-      port: 80
+    - protocol: TCP
+      port: 32000
       targetPort: 80
+  type: NodePort
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  namespace: "2401200"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: 2401200.imcc.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: client-service
+            port:
+              number: 32000
