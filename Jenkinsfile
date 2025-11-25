@@ -76,6 +76,23 @@ spec:
         }
       }
     }
+     stage('Frontend Test and Report Generation') {
+        steps {
+            // Using the new 'node' container defined in the Pod template
+            container('node') {
+                sh '''
+                    echo "Installing dependencies..."
+                    npm ci
+
+                    echo "Running Jest tests and generating LCOV/JUnit reports..."
+                    # Ensure Jest is configured to output LCOV (coverage/lcov.info) and JUnit XML (test-results.xml)
+                    npm test -- --coverage --testResultsProcessor=jest-junit --ci
+
+                    echo "Reports generated: coverage/lcov.info and test-results.xml."
+                '''
+            }
+        }
+    }
 
     stage('Build Docker Image') {
       steps {
@@ -123,24 +140,33 @@ stage('Build - Tag - Push Images') {
   }
 }
 
-   stage('SonarQube Analysis') {
-  steps {
-    container('sonar-scanner') {
-      withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
-        sh '''
-          echo "Testing Sonar reachability..."
-          curl -sS --max-time 5 http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/ || true
+    stage('SonarQube Analysis') {
+      steps {
+        container('sonar-scanner') {
+          withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
+            sh '''
+              echo "Testing Sonar reachability..."
+              curl -sS --max-time 5 [http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/) || true
 
-          sonar-scanner \
-            -Dsonar.projectKey=stack-overflow-client \
-            -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-            -Dsonar.login=${SONAR_TOKEN} \
-            -Dsonar.sources=./src || true
-        '''
-      }
-    }
-  }
-}
+              # SonarQube Scanner for a React/JS project
+              sonar-scanner \
+                -Dsonar.projectKey=stack-overflow-client \
+                -Dsonar.host.url=[http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000) \
+                -Dsonar.login=${SONAR_TOKEN} \
+                \
+                # --- START JAVASCRIPT/TYPESCRIPT PROPERTIES FOR COVERAGE ---
+                -Dsonar.sources=./src \
+                -Dsonar.tests=./src \
+                # Coverage report path (LCOV format is standard for JS)
+                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                # Test execution report path (JUnit XML format)
+                -Dsonar.testExecutionReportPaths=test-results.xml
+                # --- END JAVASCRIPT/TYPESCRIPT PROPERTIES ---
+            '''
+          }
+        }
+      }
+    }
 
 
     stage('Deploy to Kubernetes') {
