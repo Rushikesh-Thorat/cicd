@@ -1,4 +1,3 @@
-
 pipeline {
   agent {
     kubernetes {
@@ -95,34 +94,35 @@ spec:
         }
       }
     }
-stage('Build - Tag - Push Images') {
-  steps {
-    container('dind') {
-      script {
-        // Build client image from repo root (you have only frontend)
-        sh "docker build -t ${CLIENT_REPO}:${IMAGE_TAG} -f Dockerfile . || true"
-        sh "docker tag ${CLIENT_REPO}:${IMAGE_TAG} ${CLIENT_REPO}:latest || true"
 
-        // Try push only if Docker credentials exist; otherwise skip
-        try {
-          withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID,
+    stage('Build - Tag - Push Images') {
+      steps {
+        container('dind') {
+          script {
+            // Build client image from repo root (you have only frontend)
+            sh "docker build -t ${CLIENT_REPO}:${IMAGE_TAG} -f Dockerfile . || true"
+            sh "docker tag ${CLIENT_REPO}:${IMAGE_TAG} ${CLIENT_REPO}:latest || true"
+
+            // Try push only if Docker credentials exist; otherwise skip
+            try {
+              withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID,
                                             usernameVariable: 'DOCKER_USER',
                                             passwordVariable: 'DOCKER_PASS')]) {
-            sh '''
-              echo "$DOCKER_PASS" | docker login ${REGISTRY} -u "$DOCKER_USER" --password-stdin
-              docker push ${CLIENT_REPO}:${IMAGE_TAG} || true
-              docker push ${CLIENT_REPO}:latest || true
-            '''
-          }
-        } catch (err) {
-          echo "Docker push skipped: credentials not found or login failed. Image built locally in DIND pod."
-        }
+                sh '''
+                  echo "$DOCKER_PASS" | docker login ${REGISTRY} -u "$DOCKER_USER" --password-stdin
+                  docker push ${CLIENT_REPO}:${IMAGE_TAG} || true
+                  docker push ${CLIENT_REPO}:latest || true
+                '''
+              }
+            } catch (err) {
+              echo "Docker push skipped: credentials not found or login failed. Image built locally in DIND pod."
+            }
 
-        sh 'docker image ls | grep ${IMAGE_TAG} || true'
+            sh 'docker image ls | grep ${IMAGE_TAG} || true'
+          }
+        }
       }
     }
-  }
-}
 
     stage('SonarQube Analysis') {
       steps {
@@ -162,5 +162,4 @@ stage('Build - Tag - Push Images') {
       }
     }
   }
-}
 
