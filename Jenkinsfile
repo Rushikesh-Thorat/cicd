@@ -46,103 +46,100 @@ spec:
     }
   }
 
-  options {
-    buildDiscarder(logRotator(numToKeepStr: '10'))
-    timeout(time: 90, unit: 'MINUTES')
-  }
-
   stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-        script {
-          env.GIT_COMMIT_SHORT = sh(returnStdout: true,
-            script: 'git rev-parse --short=7 HEAD').trim()
-          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+        stage('Build Docker Image') {
+            steps {
+                container('dind') {
+                    sh '''
+                        sleep 15
+                        docker build -t sbox:latest .
+                        docker image ls
+                    '''
+                }
+            }
         }
-      }
-    }
 
-    stage('Install & Test - Server') {
-      steps {
-        dir('server') {
-          container('dind') {
+        stage('Run Tests in Docker') {
+            steps {
+                container('dind') {
+                    sh '''
+                        docker run --rm sbox:latest \
+                        pytest --maxfail=1 --disable-warnings --cov=. --cov-report=xml
+                    '''
+                }
+            }
+        }
+        stage('Frontend Test and Report Generation') {
+    steps {
+        // IMPORTANT: Replace 'sonar-scanner' with your Node.js container image.
+        // If your 'sonar-scanner' container is large enough to include Node/npm, you can keep it,
+        // but typically a dedicated 'node' container is best for frontend steps.
+        container('node') { // Suggesting 'node' container, update this if needed
             sh '''
-              apk add --no-cache nodejs npm || true
-              npm ci
-              npm test -- --silent || true
+                echo "Installing dependencies..."
+                # Use 'npm install' or 'yarn install'
+                npm install
+
+                echo "Running Jest tests and generating LCOV/JUnit reports..."
+                # 1. Run tests with coverage enabled.
+                # Jest outputs reports to './coverage' and 'test-results.xml' by default.
+                # Ensure your Jest configuration file (jest.config.js or package.json) has:
+                # - coverageReporters: ["lcov", "text"]
+                # - testResultsProcessor: "jest-junit" (if you want the JUnit report)
+                npm test -- --coverage --outputFile=test-results.xml --ci
+
+                # Note: We are using 'npm test' which assumes your package.json has a 'test' script.
+                
+                echo "Reports generated: coverage/lcov.info and test-results.xml."
             '''
-          }
         }
-      }
     }
-
-    stage('Build Docker Image') {
-      steps {
-        container('dind') {
-          sh '''
-            echo "Waiting for Docker daemon..."
-            for i in $(seq 1 30); do
-              docker info >/dev/null 2>&1 && break
-              echo "dockerd not ready ($i)..."
-              sleep 2
-            done
-
-            docker build -t solutionbox:latest .
-            docker image ls
-          '''
-        }
-      }
-    }
-stage('Build - Tag - Push Images ') {
-  steps {
-    container('dind') {
-      script {
-        // Build client image from repo root (ensure Dockerfile is named 'Dockerfile' at repo root)
-        sh "docker build -t ${CLIENT_REPO}:${IMAGE_TAG} -f Dockerfile . || true"
-        sh "docker tag ${CLIENT_REPO}:${IMAGE_TAG} ${CLIENT_REPO}:latest || true"
-
-        // Try push only if Docker credentials exist; otherwise skip
-        try {
-          withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID,
-                                            usernameVariable: 'DOCKER_USER',
-                                            passwordVariable: 'DOCKER_PASS')]) {
-            sh '''
-              echo "$DOCKER_PASS" | docker login ${REGISTRY} -u "$DOCKER_USER" --password-stdin
-              docker push ${CLIENT_REPO}:${IMAGE_TAG} || true
-              docker push ${CLIENT_REPO}:latest || true
-            '''
-          }
-        } catch (err) {
-          echo "Docker push skipped: credentials missing or login failed. Image kept in DIND pod only."
-        }
-
-        sh 'docker image ls | grep ${IMAGE_TAG} || true'
-      }
-    }
-  }
 }
 
-
-   stage('SonarQube Analysis') {
-  steps {
-    container('sonar-scanner') {
-      withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
-        sh '''
-          echo "Testing Sonar reachability..."
-          curl -sS --max-time 5 http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000/ || true
-
-          sonar-scanner \
-            -Dsonar.projectKey=stack-overflow-client \
-            -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-            -Dsonar.login=${SONAR_TOKEN} \
-            -Dsonar.sources=./src || true
-        '''
-      }
+// --- UPDATED SONARQUBE ANALYSIS STAGE ---
+stage('SonarQube Analysis') {
+    steps {
+        container('sonar-scanner') {
+            withCredentials([string(credentialsId: 'sonar-token-2401200', variable: 'SONAR_TOKEN')]) {
+                sh '''
+                    # SonarQube Scanner for a React/JS project
+                    sonar-scanner \
+                        -Dsonar.projectKey=24011200-Solution-Box \
+                        -Dsonar.host.url=[http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000](http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000) \
+                        -Dsonar.login=$SONAR_TOKEN \
+                        \
+                        # --- START JAVASCRIPT/TYPESCRIPT PROPERTIES ---
+                        # Coverage report path (LCOV format is standard for JS)
+                        -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                        \
+                        # Test execution report path (JUnit XML format)
+                        -Dsonar.testExecutionReportPaths=test-results.xml
+                        # --- END JAVASCRIPT/TYPESCRIPT PROPERTIES ---
+                '''
+            }
+        }
     }
-  }
 }
 
+        stage('Login to Docker Registry') {
+            steps {
+                container('dind') {
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
+                }
+            }
+        }
+        stage('Build - Tag - Push') {
+            steps {
+                container('dind') {
+                    sh 'docker tag sbox:latest nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/ajinkya-project/sbox:v1'
+                    sh 'docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/rushi-project/sbox:v1'
+                    sh 'docker pull nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/rushi-project/sbox:v1'
+                    sh 'docker image ls'
+                }
+            }
+        }
 
     stage('Deploy to Kubernetes') {
       steps {
