@@ -90,10 +90,13 @@ spec:
                     sh '''
                         echo "Installing dependencies..."
                         npm ci
+                        
+                        echo "Installing missing jest-junit reporter..."
+                        npm install jest-junit
 
                         echo "Running Jest tests and generating LCOV/JUnit reports..."
                         # This command runs tests, enables coverage, and outputs the JUnit XML file.
-                        # Ensure 'jest-junit' is installed in your package.json dependencies.
+                        # We explicitly use the jest-junit processor we just installed.
                         npm test -- --coverage --testResultsProcessor=jest-junit --ci
 
                         echo "Reports generated: coverage/lcov.info and test-results.xml."
