@@ -1,165 +1,178 @@
 pipeline {
-  agent {
-    kubernetes {
-      yaml """
+    agent {
+        kubernetes {
+            yaml '''
 apiVersion: v1
 kind: Pod
 spec:
-  securityContext:
-    fsGroup: 1000
   containers:
-  - name: dind
-    image: docker:24-dind
-    securityContext:
-      privileged: true
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
-    volumeMounts:
-      - name: docker-graph-storage
-        mountPath: /var/lib/docker
-
   - name: sonar-scanner
-    image: sonarsource/sonar-scanner-cli:latest
+    image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
-
   - name: kubectl
     image: bitnami/kubectl:latest
     command: ["cat"]
     tty: true
+    securityContext:
+      runAsUser: 0
     env:
-      - name: KUBECONFIG
-        value: /kube/config
+    - name: KUBECONFIG
+      value: /kube/config
     volumeMounts:
-      - name: kubeconfig-secret
-        mountPath: /kube/config
-        subPath: kubeconfig
-
-  volumes:
-    - name: docker-graph-storage
-      emptyDir: {}
     - name: kubeconfig-secret
-      secret:
-        secretName: kubeconfig-secret
-"""
-    }
-  }
-
-  options {
-    buildDiscarder(logRotator(numToKeepStr: '10'))
-    timeout(time: 90, unit: 'MINUTES')
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-        script {
-          env.GIT_COMMIT_SHORT = sh(returnStdout: true,
-            script: 'git rev-parse --short=7 HEAD').trim()
-          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+      mountPath: /kube/config
+      subPath: kubeconfig
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    args: 
+    - "--storage-driver=overlay2"
+    volumeMounts:
+    - name: docker-config
+      mountPath: /etc/docker/daemon.json
+      subPath: daemon.json
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  - name: jnlp
+    image: jenkins/inbound-agent:3309.v27b_9314fd1a_4-1
+    env:
+    - name: JENKINS_AGENT_WORKDIR
+      value: "/home/jenkins/agent"
+    volumeMounts:
+    - mountPath: "/home/jenkins/agent"
+      name: workspace-volume
+  volumes:
+  - name: workspace-volume
+    emptyDir: {}
+  - name: docker-config
+    configMap:
+      name: docker-daemon-config
+  - name: kubeconfig-secret
+    secret:
+      secretName: kubeconfig-secret
+'''
         }
-      }
     }
 
-    stage('Install & Test - Server') {
-      steps {
-        dir('server') {
-          container('dind') {
-            sh '''
-              apk add --no-cache nodejs npm || true
-              npm ci
-              npm test -- --silent || true
-            '''
-          }
-        }
-      }
+    environment {
+        // Define your registry URL here to avoid typos
+        NEXUS_REGISTRY = 'nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085'
+        REPO_NAME = 'my-repository'
+        IMAGE_NAME = 'client'
     }
 
-    stage('Build Docker Image') {
-      steps {
-        container('dind') {
-          sh '''
-            echo "Waiting for Docker daemon..."
-            for i in $(seq 1 30); do
-              docker info >/dev/null 2>&1 && break
-              echo "dockerd not ready ($i)..."
-              sleep 2
-            done
-
-            docker build -t solutionbox:latest .
-            docker image ls
-          '''
-        }
-      }
-    }
-
-    stage('Build - Tag - Push Images') {
-      steps {
-        container('dind') {
-          script {
-            // Build client image from repo root (you have only frontend)
-            sh "docker build -t ${CLIENT_REPO}:${IMAGE_TAG} -f Dockerfile . || true"
-            sh "docker tag ${CLIENT_REPO}:${IMAGE_TAG} ${CLIENT_REPO}:latest || true"
-
-            // Try push only if Docker credentials exist; otherwise skip
-            try {
-              withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID,
-                                            usernameVariable: 'DOCKER_USER',
-                                            passwordVariable: 'DOCKER_PASS')]) {
-                sh '''
-                  echo "$DOCKER_PASS" | docker login ${REGISTRY} -u "$DOCKER_USER" --password-stdin
-                  docker push ${CLIENT_REPO}:${IMAGE_TAG} || true
-                  docker push ${CLIENT_REPO}:latest || true
-                '''
-              }
-            } catch (err) {
-              echo "Docker push skipped: credentials not found or login failed. Image built locally in DIND pod."
+    stages {
+        stage('CHECK') {
+            steps {
+                echo "DEBUG >>> NEW JENKINSFILE IS ACTIVE"
             }
-
-            sh 'docker image ls | grep ${IMAGE_TAG} || true'
-          }
         }
-      }
-    }
 
-    stage('SonarQube Analysis') {
-      steps {
-        container('sonar-scanner') {
-          withCredentials([string(credentialsId: env.SONAR_CREDENTIALS_ID, variable: 'SONAR_TOKEN')]) {
-            sh "sonar-scanner -Dsonar.login=${SONAR_TOKEN} -Dsonar.projectKey=..."
-          }
+        stage('Build Docker Image') {
+            steps {
+                container('dind') {
+                    sh '''
+                        echo "Waiting for Docker daemon..."
+                        for i in $(seq 1 30); do
+                            docker info >/dev/null 2>&1 && break
+                            echo "dockerd not ready ($i)..."
+                            sleep 2
+                        done
+                        
+                        # FIX 1: Build the image with the name 'client' to match later stages
+                        docker build -t client:latest .
+                        docker image ls
+                    '''
+                }
+            }
         }
-      }
-    }
 
-    stage('Deploy to Kubernetes') {
-      steps {
-        container('kubectl') {
-          dir('k8s-deployment') {
-            sh '''
-              kubectl set image deployment/stack-overflow-client \
-                stack-overflow-client=${CLIENT_REPO}:${IMAGE_TAG} -n stack-overflow || true
-
-              kubectl apply -f .
-
-              kubectl rollout status deployment/stack-overflow-client \
-                -n stack-overflow --timeout=120s || true
-            '''
-          }
+        stage('SonarQube Scan') {
+            steps {
+                container('sonar-scanner') {
+                    withCredentials([string(credentialsId: '2401200_solutionbox', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            sonar-scanner \
+                              -Dsonar.projectKey=2401200_solutionbox \
+                              -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+                              -Dsonar.login=$SONAR_TOKEN
+                        '''
+                    }
+                }
+            }
         }
-      }
-    }
-  }
 
-  post {
-    success { echo "Pipeline Succeeded!" }
-    failure { echo "Pipeline Failed" }
-    always {
-      container('dind') {
-        sh 'docker image prune -f || true'
-      }
-    }
-  }
+        stage('Login to Nexus Registry') {
+            steps {
+                container('dind') {
+                    sh """
+                        docker --version
+                        sleep 5
+                        # Log in using the variable defined at the top
+                        docker login ${NEXUS_REGISTRY} -u admin -p Changeme@2025
+                    """
+                }
+            }
+        }
 
+        stage('Tag + Push Images') {
+            steps {
+                container('dind') {
+                    sh """
+                        # FIX 2: Tag the image with the BUILD_NUMBER so K8s can pull this specific version
+                        docker tag client:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        docker tag client:latest ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:latest
+
+                        # Push BOTH the specific version and latest
+                        docker push ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        docker push ${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:latest
+                    """
+                }
+            }
+        }
+
+        stage('Create Namespace') {
+            steps {
+                container('kubectl') {
+                    sh """
+                        # 1. Create namespace if it doesn't exist
+                        kubectl get namespace 2401200 || kubectl create namespace 2401200
+
+                        # 2. Create Docker Registry Secret
+                        kubectl create secret docker-registry nexus-secret \
+                          --docker-server=${NEXUS_REGISTRY} \
+                          --docker-username=admin \
+                          --docker-password=Changeme@2025 \
+                          --namespace=2401200 \
+                          --dry-run=client -o yaml | kubectl apply -f -
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                container('kubectl') {
+                    dir('k8s-deployment') { 
+                        sh """
+                            # Update deployment.yaml to use the image with the current BUILD_NUMBER
+                            # Ensure your deployment.yaml has 'image: .../client:latest' for this sed to work
+                            sed -i 's|client:latest|client:${BUILD_NUMBER}|g' deployment.yaml
+                            
+                            kubectl apply -f deployment.yaml
+                            
+                            # Give it a moment to start
+                            sleep 5
+                            kubectl get pods -n 2401200
+                        """
+                    }
+                }
+            }
+        }
+    }
+}
