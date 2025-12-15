@@ -62,7 +62,7 @@ spec:
     environment {
         // Define your registry URL here to avoid typos
         NEXUS_REGISTRY = 'nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085'
-        REPO_NAME = 'my-repository'
+        REPO_NAME = '2401200'
         IMAGE_NAME = 'client'
     }
 
@@ -95,10 +95,10 @@ spec:
         stage('SonarQube Scan') {
             steps {
                 container('sonar-scanner') {
-                    withCredentials([string(credentialsId: '2401200_solutionbox', variable: 'SONAR_TOKEN')]) {
+                    withCredentials([string(credentialsId: 'sonar-token-2401200', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             sonar-scanner \
-                              -Dsonar.projectKey=2401200_solutionbox \
+                              -Dsonar.projectKey=2401200_sbox \
                               -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
                               -Dsonar.login=$SONAR_TOKEN
                         '''
@@ -136,24 +136,24 @@ spec:
             }
         }
 
-        stage('Create Namespace') {
-            steps {
-                container('kubectl') {
-                    sh """
-                        # 1. Create namespace if it doesn't exist
-                        kubectl get namespace 2401200 || kubectl create namespace 2401200
+        // stage('Create Namespace') {
+        //     steps {
+        //         container('kubectl') {
+        //             sh """
+        //                 # 1. Create namespace if it doesn't exist
+        //                 # kubectl get namespace 2401200 || kubectl create namespace 2401200
 
-                        # 2. Create Docker Registry Secret
-                        kubectl create secret docker-registry nexus-secret \
-                          --docker-server=${NEXUS_REGISTRY} \
-                          --docker-username=admin \
-                          --docker-password=Changeme@2025 \
-                          --namespace=2401200 \
-                          --dry-run=client -o yaml | kubectl apply -f -
-                    """
-                }
-            }
-        }
+        //                 # 2. Create Docker Registry Secret
+        //                 kubectl create secret docker-registry nexus-secret \
+        //                   --docker-server=${NEXUS_REGISTRY} \
+        //                   --docker-username=admin \
+        //                   --docker-password=Changeme@2025 \
+        //                   --namespace=2401200 \
+        //                   --dry-run=client -o yaml | kubectl apply -f -
+        //             """
+        //         }
+        //     }
+        // }
 
         stage('Deploy to Kubernetes') {
             steps {
@@ -162,7 +162,7 @@ spec:
                         sh """
                             # Update deployment.yaml to use the image with the current BUILD_NUMBER
                             # Ensure your deployment.yaml has 'image: .../client:latest' for this sed to work
-                            sed -i "s|client:latest|${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
+                          #  sed -i "s|client:latest|${NEXUS_REGISTRY}/${REPO_NAME}/${IMAGE_NAME}:${BUILD_NUMBER}|g" deployment.yaml
                             
                             kubectl apply -f deployment.yaml
                             

@@ -19,7 +19,7 @@ spec:
       - name: client
         # We keep this as 'client:latest' so your Jenkinsfile can replace it
         # with the full Nexus URL using the 'sed' command.
-        image: client:latest
+        image: 127.0.0.1:30085/2401200/client:latest
         ports:
         - containerPort: 80
 ---
